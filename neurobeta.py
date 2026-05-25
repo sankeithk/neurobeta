@@ -19,7 +19,7 @@ if __name__ == "__main__":
     print(f"Output directory: {o}")
     bet_file = brain_extractor(i, o)
     segmented_file = segmenter(bet_file)
-    dicv_file = coregister(segmented_file)
+    dicv_file = coregister(segmented_file, bet_file)
     
 
 

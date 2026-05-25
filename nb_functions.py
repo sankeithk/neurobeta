@@ -8,6 +8,7 @@ import click
 import os
 import sys
 import nipype
+import subprocess
 
 def nb_exit(code):
     print(f"Exiting Neurobeta. Code: {code}")
@@ -76,18 +77,20 @@ def segmenter(bet_file):
         nb_exit(1)
     else:
         print(f"Segmenting brain extracted file {bet_file} into GM, WM and CSF...")
-        from nipype.interfaces import fsl
-        fast = fsl.FAST(in_files=bet_file, out_basename=f'{os.path.basename(bet_file).replace("_brain_extracted.nii.gz", "")}_segmented', verbose = True, output_type='NIFTI_GZ')
-        fast.run()
-        if not os.path.exists(f'{os.path.basename(bet_file).replace("_brain_extracted.nii.gz", "")}_segmented_pve_1.nii.gz'):
-            print(f"Segmentation failed. Output file not found: {os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented_pve_1.nii.gz")
+        import subprocess
+        output_basename = f"{os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented"        
+        cmd_fast = f"fast -n 3 -v -o {output_basename} {bet_file}"
+        subprocess.run(cmd_fast, shell=True)
+        if not os.path.exists(f'{output_basename}_pve_1.nii.gz'):
+            print(f"Segmentation failed. Output file not found: {output_basename}_pve_1.nii.gz")
             nb_exit(1)
         else:
-            print(f"Segmentation successful. Output files: {os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented_pve_0.nii.gz (CSF), {os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented_pve_1.nii.gz (GM), {os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented_pve_2.nii.gz (WM)")
-            return f'{os.path.basename(bet_file).replace("_brain_extracted.nii.gz", "")}_segmented_pve_1.nii.gz' # Return GM partial volume estimate file
+            print(f"Segmentation successful. Output files: {output_basename}_pve_0.nii.gz (CSF), {output_basename}_pve_1.nii.gz (GM), {output_basename}_pve_2.nii.gz (WM)")
+            return f'{output_basename}_pve_1.nii.gz' # Return GM partial volume estimate file
 
 
-def coregister(infile):
+def coregister(infile, bet_file):
+    # bet_file is to get an ICV
     if os.path.exists(infile) == False:
         print(f"Coregistration failed. Input file not found: {infile}")
         nb_exit(1)
@@ -96,25 +99,20 @@ def coregister(infile):
         """
         FLIRT to MNI152
         """
+        mni152_brain_reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz'
+        flirted_file=f"{os.path.basename(infile).replace('_pve_1.nii.gz', '')}_coregistered.nii.gz" 
+        cmd_flirt = f"flirt -in {infile} -ref {mni152_brain_reference}  -dof 6 -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
         
-        from nipype.interfaces import fsl
-        flirt = fsl.FLIRT(in_file=infile, 
-                          reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz', 
-                          out_file=f'{os.path.basename(infile).replace(".nii.gz", "")}_coregistered.nii.gz', 
-                          apply_isoxfm = 1.0, 
-                          verbose = True, 
-                          output_type='NIFTI_GZ'
-                          )
-        flirt.run()
-        if not os.path.exists(f'{os.path.basename(infile).replace(".nii.gz", "")}_coregistered.nii.gz'):
-            print(f"Coregistration failed. Output file not found: {os.path.basename(infile).replace('.nii.gz', '')}_coregistered.nii.gz")
+        subprocess.run(cmd_flirt, shell=True)
+        if not os.path.exists(flirted_file):
+            print(f"Coregistration failed. Output file not found: {flirted_file}")
             nb_exit(1)
         else:
-            print(f"Coregistration successful. Output file: {os.path.basename(infile).replace('.nii.gz', '')}_coregistered.nii.gz")
-            flirted_file = f'{os.path.basename(infile).replace(".nii.gz", "")}_coregistered.nii.gz'
+            print(f"Coregistration successful. Output file: {flirted_file}")
+            print("Calculating ICV...")
             import nibabel as nib
             import numpy as np
-            img = nib.load(flirted_file)
+            img = nib.load(bet_file)
             data = img.get_fdata()
             voxel_volume = np.prod(img.header.get_zooms()[:3])
             brain_mask = data > 0
@@ -123,32 +121,30 @@ def coregister(infile):
             """
             normalise GM scan
             """
-            import scipy
-            from scipy.stats import zscore
-            brain_values = data[brain_mask]
-            brain_values_z = zscore(brain_values) # Divide z-scored data by ICV to normalise for head size
-            norm_data = np.zeros_like(data)
-            norm_data[brain_mask] = brain_values_z / icv
-            dicv_outfile = f'{os.path.basename(infile).replace(".nii.gz", "")}_dicv.nii.gz'
+            mni152_brainmask_reference= "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain_mask.nii.gz"
+            norm_filename = f"{os.path.basename(flirted_file).replace('_coregistered.nii.gz', '')}_norm.nii.gz"
+            print("Normalising with scan mean and standard deviation...")
+            #assert img.header.get_zooms() == (1.0, 1.0, 1.0)
 
-            dicv_img = nib.Nifti1Image(
-                norm_data.astype(np.float32),
-                img.affine,
-                img.header
-            )
-
-            nib.save(dicv_img, dicv_outfile)
-            flirt = fsl.FLIRT(in_file=dicv_outfile, 
-                    reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz', 
-                    out_file=f'{os.path.basename(infile).replace(".nii.gz", "")}_reflirted.nii.gz', 
-                    verbose = True, 
-                    output_type='NIFTI_GZ'
-                    )
-            flirt.run()
-
-            print(f"Saved normalized image: {os.path.basename(infile).replace('.nii.gz', '')}_reflirted.nii.gz")
-
-            return dicv_outfile
-            
-
+ 
+            cmd_mean = f"fslstats {flirted_file} -k {mni152_brainmask_reference} -m"
+            res_mean = subprocess.run(cmd_mean, text = True, shell = True, capture_output = True)
+            cmd_std = f"fslstats {flirted_file} -k {mni152_brainmask_reference} -s"
+            res_std = subprocess.run(cmd_std, text = True, shell = True, capture_output = True)
+            print(f"Mean for z-scoring: {res_mean.stdout}. Standard deviation for z-scoring: {res_std.stdout}")
+            norm_cmd = f"fslmaths {flirted_file} -sub {res_mean.stdout.strip()} -div {res_std.stdout.strip()} -mas {mni152_brainmask_reference} {norm_filename}"
+            subprocess.run(norm_cmd, shell = True)
+            if os.path.exists(norm_filename) == False:
+                print(f"Coregistration failed. Output file not found: {norm_filename}")
+                nb_exit(1)
+            else:
+                print("Normalising with ICV this time...")
+                dicv_outfile = f"{os.path.basename(flirted_file).replace('_norm.nii.gz', '')}_dicv.nii.gz"
+                dicv_cmd = f"fslmaths {norm_filename} -div {icv} {dicv_outfile}"
+                subprocess.run(dicv_cmd, shell = True)
+                if os.path.exists(dicv_outfile) == False:
+                    print(f"Coregistration failed. Output file not found: {dicv_outfile}")
+                    nb_exit(1)
+                else:
+                    print(f"Success: {dicv_outfile} located and ready for ROI analysis")
 
