@@ -29,6 +29,8 @@ def nb_help():
     print("\nUsage: neurobeta.py <input_file> <output_dir>")
     print("Note: Input file MUST EXISTS. Output directory will be created if it does not exist.")
 
+
+
 def args_checker(*args):
     if len(args) == 1: # No arguments provided
         nb_greet()
@@ -53,15 +55,21 @@ def args_checker(*args):
         else:
             print("Invalid number of arguments. Please provide exactly 2 arguments: <input_file> <output_dir>")
             nb_exit(1)
-    
 
-def brain_extractor(input_file, output_dir):
+def nb_getbasename(infile):
+    nb_basename = os.path.basename(infile).replace('.nii.gz', '')
+    print(f'Basename for any intermediate files: {nb_basename}')
+    return nb_basename
+
+
+def brain_extractor(input_file, output_dir, nb_basename):
     os.chdir(output_dir) # Change working directory to output directory to save outputs there
-    print(f"Extracting brain from input file {input_file}...")
+    print(f'Changed working directory to {output_dir}')
+    print(f"Step 1: Extracting brain from input file {input_file}...")
     # Here you would add the code to perform brain extraction using FSL's BET or another tool
     # For example, using nipype to interface with FSL:
     from nipype.interfaces import fsl
-    bet_file = f'{output_dir}/{os.path.basename(input_file).replace(".nii.gz", "")}_brain_extracted.nii.gz'
+    bet_file = f'{output_dir}/step1_{nb_basename}_brain_extracted.nii.gz'
     bet = fsl.BET(in_file=input_file, out_file=bet_file, mask=False, frac = 0.35)
     bet.run()
     if not os.path.exists(bet_file):
@@ -71,14 +79,14 @@ def brain_extractor(input_file, output_dir):
         print(f"Brain extraction successful. Output file: {bet_file}")
         return bet_file
 
-def segmenter(bet_file):
+def segmenter(bet_file, nb_basename):
     if os.path.exists(bet_file) == False:
         print(f"Segmentation failed. Brain extracted file not found: {bet_file}")
         nb_exit(1)
     else:
-        print(f"Segmenting brain extracted file {bet_file} into GM, WM and CSF...")
+        print(f"Step 2: Segmenting brain extracted file {bet_file} into GM, WM and CSF...")
         import subprocess
-        output_basename = f"{os.path.basename(bet_file).replace('_brain_extracted.nii.gz', '')}_segmented"        
+        output_basename = f"step2_{nb_basename}_segmented"        
         cmd_fast = f"fast -n 3 -v -o {output_basename} {bet_file}"
         subprocess.run(cmd_fast, shell=True)
         if not os.path.exists(f'{output_basename}_pve_1.nii.gz'):
@@ -89,19 +97,19 @@ def segmenter(bet_file):
             return f'{output_basename}_pve_1.nii.gz' # Return GM partial volume estimate file
 
 
-def coregister(infile, bet_file):
+def coregister(infile, bet_file, nb_basename, dof = 6):
     # bet_file is to get an ICV
     if os.path.exists(infile) == False:
         print(f"Coregistration failed. Input file not found: {infile}")
         nb_exit(1)
     else:
-        print(f"Coregistering file {infile} to MNI 1mm3 space...")
+        print(f"Step 3: Coregistering file {infile} to MNI 1mm3 space...")
         """
         FLIRT to MNI152
         """
         mni152_brain_reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz'
-        flirted_file=f"{os.path.basename(infile).replace('_pve_1.nii.gz', '')}_coregistered.nii.gz" 
-        cmd_flirt = f"flirt -in {infile} -ref {mni152_brain_reference}  -dof 6 -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
+        flirted_file=f"step3_{nb_basename}_coregistered.nii.gz" 
+        cmd_flirt = f"flirt -in {infile} -ref {mni152_brain_reference}  -dof {dof} -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
         
         subprocess.run(cmd_flirt, shell=True)
         if not os.path.exists(flirted_file):
@@ -122,9 +130,8 @@ def coregister(infile, bet_file):
             normalise GM scan
             """
             mni152_brainmask_reference= "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain_mask.nii.gz"
-            norm_filename = f"{os.path.basename(flirted_file).replace('_coregistered.nii.gz', '')}_norm.nii.gz"
-            print("Normalising with scan mean and standard deviation...")
-            #assert img.header.get_zooms() == (1.0, 1.0, 1.0)
+            norm_filename = f"step4_{nb_basename}_norm.nii.gz"
+            print("Step 4: Normalising with scan mean and standard deviation...")
 
  
             cmd_mean = f"fslstats {flirted_file} -k {mni152_brainmask_reference} -m"
@@ -138,8 +145,8 @@ def coregister(infile, bet_file):
                 print(f"Coregistration failed. Output file not found: {norm_filename}")
                 nb_exit(1)
             else:
-                print("Normalising with ICV this time...")
-                dicv_outfile = f"{os.path.basename(flirted_file).replace('_norm.nii.gz', '')}_dicv.nii.gz"
+                print("Step 5: Normalising with ICV this time...")
+                dicv_outfile = f"step5_{nb_basename}_dicv.nii.gz"
                 dicv_cmd = f"fslmaths {norm_filename} -div {icv} {dicv_outfile}"
                 subprocess.run(dicv_cmd, shell = True)
                 if os.path.exists(dicv_outfile) == False:
@@ -147,4 +154,8 @@ def coregister(infile, bet_file):
                     nb_exit(1)
                 else:
                     print(f"Success: {dicv_outfile} located and ready for ROI analysis")
+                    return dicv_outfile
+
+def roi_xtractor(dicv_outfile, nb_basename):
+    pass
 
