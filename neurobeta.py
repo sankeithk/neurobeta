@@ -17,7 +17,7 @@ if __name__ == "__main__":
     i,o = args_checker(*sys.argv)
     print(f"Input file: {i}")
     print(f"Output directory: {o}")
-    run_preproc(i, o)
+    run_dartel(i, o)
 
 
 
