@@ -9,6 +9,8 @@ import os
 import sys
 import nipype
 import subprocess
+import deepmriprep 
+from deepmriprep import run_preprocess
 
 def nb_exit(code):
     print(f"Exiting Neurobeta. Code: {code}")
@@ -56,10 +58,56 @@ def args_checker(*args):
             print("Invalid number of arguments. Please provide exactly 2 arguments: <input_file> <output_dir>")
             nb_exit(1)
 
+import gzip
+import shutil
+
+def run_dartel(input_file, output_dir):
+    # 1. SPM needs .nii, not .nii.gz
+    if input_file.endswith('.gz'):
+        unzipped_file = os.path.join(output_dir, os.path.basename(input_file).replace('.gz', ''))
+        print(f"Unzipping {input_file} to {unzipped_file}...")
+        with gzip.open(input_file, 'rb') as f_in:
+            with open(unzipped_file, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        input_file = unzipped_file
+
+    input_file = str(os.path.abspath(input_file))
+    output_dir = str(os.path.abspath(output_dir))
+    
+    # 2. Path to your .m scripts
+    script_dir = "/mnt/c/Users/User/Downloads/neurobeta"
+    
+    command = ["/mnt/c/Users/User/Downloads/neurobeta/run_dartel.sh", input_file, output_dir, script_dir]
+    
+    print('Starting DARTEL-based GM segmentation...')
+    try:
+        # Note: Changed to capture output more effectively for debugging
+        result = subprocess.run(command, check=True, text=True, capture_output=True)
+        print(result.stdout)
+        print(result.stderr)
+
+        print("--- Pipeline Finished Successfully ---")
+    except subprocess.CalledProcessError as e:
+        print("--- Pipeline FAILED ---")
+        print("STDOUT:", e.stdout) # Crucial: SPM errors usually print to stdout
+        print("STDERR:", e.stderr)
+        nb_exit(2)
+
 def nb_getbasename(infile):
     nb_basename = os.path.basename(infile).replace('.nii.gz', '')
     print(f'Basename for any intermediate files: {nb_basename}')
     return nb_basename
+
+def run_preproc(input_file, output_dir):
+    # 1. SPM needs .nii, not .nii.gz
+    if input_file.endswith('.gz'):
+        cmd_synthstrip = f"mri_synthstrip -i {input_file} -o {output_dir + '/' + 'bet' + nb_getbasename(input_file) + '.nii.gz'}"
+        subprocess.run(cmd_synthstrip, shell=True)
+    
+
+
+
+
 
 
 def brain_extractor(input_file, output_dir, nb_basename):

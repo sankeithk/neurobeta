@@ -17,11 +17,7 @@ if __name__ == "__main__":
     i,o = args_checker(*sys.argv)
     print(f"Input file: {i}")
     print(f"Output directory: {o}")
-    nb_basename = nb_getbasename(i)
-    bet_file = brain_extractor(i, o, nb_basename)
-    segmented_file = segmenter(bet_file, nb_basename)
-    dicv_file = coregister(segmented_file, bet_file, nb_basename, dof = 12)
-    
+    run_preproc(i, o)
 
 
 
