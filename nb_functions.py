@@ -238,10 +238,23 @@ exit(0);
     for line in process.stdout:
         print(line, end='')
     process.wait()
-
-def mwc1t1_checker(output_dir):
     if os.path.exists(os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')):
         mwc1t1_file = os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')
+        mni152_brain_reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz'
+        flirted_file=os.path.join(output_dir, "mwc1t1_zscore_flirted.nii.gz")
+        cmd_flirt = f"flirt -v -in {mwc1t1_file} -ref {mni152_brain_reference}  -dof 12 -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
+        subprocess.run(cmd_flirt, shell=True)
+        if os.path.exists(flirted_file):
+            print('Fully processed probabilistic map (not normalised by ICV yet) successfully created. Moving onto mwc1t1 checker')
+            return flirted_file
+        else:
+            print('Error - Fully processed probabilistic map (not normalised by ICV yet) not found')
+            nb_exit(2)
+    
+
+def mwc1t1_checker(flirted_file):
+    if os.path.exists(flirted_file):
+        mwc1t1_file = flirted_file
         print(f'{mwc1t1_file} exists')
         print(f'Checking quality of output - it\'s also good to look at the file yourself')
         import nibabel as nib
@@ -258,47 +271,32 @@ def mwc1t1_checker(output_dir):
         print(f'Mean of non-zero voxels for {mwc1t1_file}: {voxmean.stdout.strip()}')
         print(f'Standard deviation of non-zero voxels for {mwc1t1_file}: {voxstdev.stdout.strip()}')
     else:
-        print('Error - mwc1t1 file not found')
+        print('Error - Fully processed probabilistic map (not normalised by ICV yet) not found')
         nb_exit(2)
 
 def dicv_file_producer(output_dir):
+    os.chdir(output_dir)
+    print(f'ICV normalisation starting. Changed working directory to {output_dir}')
+    if os.path.exists("mwc1t1_zscore_flirted.nii.gz"):
+        if os.path.exists('dicv_file_producer.sh'):
+            cmd_dicv = f"bash dicv_file_producer.sh {output_dir}"
+            dict_result = subprocess.run(cmd_dicv, shell = True)
+            if os.path.exists('icv.txt'):
+                with open('icv.txt') as f:
+                    icv = f.readline()
+                    icv = int(icv)
+                    dicv_outfile = f"mwc1t1_zscore_flirted_dicv.nii.gz"
+                    dicv_cmd = f"fslmaths mwc1t1_zscore_flirted.nii.gz -div {icv} {dicv_outfile}"
+                    subprocess.run(dicv_cmd, shell = True)
+                    if os.path.exists(dicv_outfile):
+                        print('ICV normalisation successful!')
+                        return dicv_outfile
+                    else:
+                        print('Error - File not found')
+                        nb_exit(2)
+
+def roi_xtractor(dicv_outfile):
     pass
-
-
-# import gzip
-# import shutil
-
-# def run_dartel(input_file, output_dir):
-#     # 1. SPM needs .nii, not .nii.gz
-#     if input_file.endswith('.gz'):
-#         unzipped_file = os.path.join(output_dir, os.path.basename(input_file).replace('.gz', ''))
-#         print(f"Unzipping {input_file} to {unzipped_file}...")
-#         with gzip.open(input_file, 'rb') as f_in:
-#             with open(unzipped_file, 'wb') as f_out:
-#                 shutil.copyfileobj(f_in, f_out)
-#         input_file = unzipped_file
-
-#     input_file = str(os.path.abspath(input_file))
-#     output_dir = str(os.path.abspath(output_dir))
-    
-#     # 2. Path to your .m scripts
-#     script_dir = "/mnt/c/Users/User/Downloads/neurobeta"
-    
-#     command = ["/mnt/c/Users/User/Downloads/neurobeta/run_dartel.sh", input_file, output_dir, script_dir]
-    
-#     print('Starting DARTEL-based GM segmentation...')
-#     try:
-#         # Note: Changed to capture output more effectively for debugging
-#         result = subprocess.run(command, check=True, text=True, capture_output=True)
-#         print(result.stdout)
-#         print(result.stderr)
-
-#         print("--- Pipeline Finished Successfully ---")
-#     except subprocess.CalledProcessError as e:
-#         print("--- Pipeline FAILED ---")
-#         print("STDOUT:", e.stdout) # Crucial: SPM errors usually print to stdout
-#         print("STDERR:", e.stderr)
-#         nb_exit(2)
 
 
 
@@ -398,6 +396,5 @@ def coregister(infile, bet_file, nb_basename, dof = 6):
                     print(f"Success: {dicv_outfile} located and ready for ROI analysis")
                     return dicv_outfile
 
-def roi_xtractor(dicv_outfile, nb_basename):
-    pass
+
 
