@@ -346,6 +346,7 @@ def gm_visualiser(output_dir,
     fsaverage = datasets.fetch_surf_fsaverage()
     cmap = plt.get_cmap('coolwarm', 8)
     print(f'Plotting surface view...')
+    plt.figure(figsize = (20,10))
     plotting.plot_img_on_surf(
         stat_map = scaled_stat_img,
         mask_img=None,
@@ -358,7 +359,10 @@ def gm_visualiser(output_dir,
         cmap='coolwarm'
     )
     plt.savefig(f"{output_dir}/plots/surface_view_plots.png", dpi=600)
+    plt.close()
     print(f'Plotting cross-sectional stat map...')
+    
+    plt.figure(figsize = (20,10))
     plotting.plot_stat_map(
     stat_img,
     display_mode='z',
@@ -369,6 +373,7 @@ def gm_visualiser(output_dir,
     bg_img=None)
     
     plt.savefig(f"{output_dir}/plots/cross_sectional_statmap.png", dpi=600)
+    plt.close()
 
 import pandas as pd
 import numpy as np
@@ -585,6 +590,7 @@ def linear_spatial_regression(input_file, cleaned_rois, output_dir):
     os.makedirs('plots', exist_ok = True)
     heatmap_path = os.path.join('plots', f'{nb_basename}_heatmap.png')
     plt.savefig(heatmap_path, dpi = 600)
+    plt.close()
     print(f'Heatmap of beta coefficient values saved to {heatmap_path}')
     linreg_results = ResultsClass(float(r_squared[0]), float(adj_r_squared[0]), float(pval))
     return linreg_results, coeff_df
@@ -618,9 +624,10 @@ def machine_learner(coeff_df, output_dir, input_file):
     X_test = scaler.transform(X_test_raw)
     y_pred = xgb.predict(X_test)
     y_predict_proba = xgb.predict_proba(X_test)
+    from sklearn.metrics import brier_score_loss
 
     diag_dict = {0 : 'Cognitively Normal', 1 : 'Alzheimer\'s Disease'}
-    print(f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%')
+    print(f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.')
 
     y_pred_lr = lr.predict(X_test)
     y_predict_proba_lr = lr.predict_proba(X_test)
@@ -632,9 +639,38 @@ def machine_learner(coeff_df, output_dir, input_file):
     explainer = shap.TreeExplainer(xgb, X_test)
     shap_values = explainer(X_test)
     shap_values.feature_names = X_test_raw.columns.tolist()
-
-    shap.plots.waterfall(shap_values[0], max_display = 19, show = False)
-    plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_waterfall.png', dpi = 600)
+    explainer = shap.TreeExplainer(xgb, X_test)
+    shap_values = explainer(X_test)
+    shap_values.feature_names = X_test_raw.columns.tolist()
+    plt.figure(figsize = (15, 10))
+    shap.decision_plot(
+        base_value = explainer.expected_value,
+        shap_values = shap_values.values[0],
+        features = X_test,
+        feature_names = X_test_raw.columns.tolist(),
+        show = False)
+    os.chdir(output_dir)
+    plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_decision.png', dpi = 600)
     plt.close()
+
+def report_gen(output_dir,  linreg_results = 'foo'):
+    html = f"<html><head><title>Neurobeta report = {nb_getbasename(output_dir)}</title></head><body>"
+    html += "<br>"
+    html += f"<h1>GM atrophy data visualisation</h1>"
+    html += "<br>"
+    html += "<h2>Surface view</h2>"
+    html += f'<img src="plots/surface_view_plots.png" width="800">'
+    html += "<br>"
+    html += "<h2>Stat map</h2>"
+    html += "<br>"
+    html += f'<img src="plots/cross_sectional_statmap.png" width="800">'
+    html += "<br>"
+
+    output_html = f'{output_dir}/{nb_getbasename(output_dir)}_report.html'
+    with open(output_html, 'w') as f:
+        f.write(html)
+
+    print(f"Report saved to {output_html}")
+    nb_exit(0)
 
 

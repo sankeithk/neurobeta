@@ -22,6 +22,7 @@ if __name__ == "__main__":
     gm_visualiser(output_dir = o, cleaned_rois = roi_stdout)
     linreg_results, coeff_df = linear_spatial_regression(input_file = i, cleaned_rois = roi_stdout, output_dir = o)
     machine_learner(coeff_df, input_file = i, output_dir = o)
+    report_gen(o)
 
 
 
