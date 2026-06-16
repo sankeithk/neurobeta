@@ -33,7 +33,11 @@ def nb_help():
     print("\nUsage: neurobeta.py <input_file> <output_dir>")
     print("Note: Input file MUST EXISTS. Output directory will be created if it does not exist.")
 
-
+def nb_getbasename(infile, verbose = False):
+    nb_basename = os.path.basename(infile).replace('.nii.gz', '')
+    if verbose:
+        print(f'Basename for any intermediate files: {nb_basename}')
+    return nb_basename
 
 def args_checker(*args):
     if len(args) == 1: # No arguments provided
@@ -44,6 +48,7 @@ def args_checker(*args):
         if len(args) == 3:
             input_file = args[1]
             output_dir = args[2]
+            nb_getbasename(input_file, verbose = True)
             # Check if input file exists and is a valid NIfTI file
             if not os.path.exists(input_file) or not input_file.endswith('.nii.gz'):
                 print(f"Input file {input_file} does not exist or is not a valid NIfTI file. Please provide a valid input file.")
@@ -60,10 +65,7 @@ def args_checker(*args):
             print("Invalid number of arguments. Please provide exactly 2 arguments: <input_file> <output_dir>")
             nb_exit(1)
 
-def nb_getbasename(infile):
-    nb_basename = os.path.basename(infile).replace('.nii.gz', '')
-    print(f'Basename for any intermediate files: {nb_basename}')
-    return nb_basename
+
 
 ## DARTEL function(s) - WIP
 
@@ -77,8 +79,16 @@ def run_dartel(input_file, output_dir):
     # For the TPM file path, you need to change it within matlab_template. I've made a 'dud' tpm_file variable here for readability
     tpm_file = '/home/sankeith/spm_standalone/spm25_mcr/spm25/tpm/TPM.nii'
 
+    # Use fslreorient2std to make sure input image is in correct orientation
+    import subprocess
+    reorient2std_outpath = os.path.join(output_dir,f'{nb_getbasename(input_file)}_reoriented_fsl.nii.gz')
+    cmd_reorient = f"fslreorient2std {input_file} {reorient2std_outpath}"
+    print('Reorienting input image ahead of segmentation...')
+    subprocess.run(cmd_reorient, shell=True)
+
+
     # Prepare paths for MATLAB
-    m_input = input_file.replace('\\', '/')
+    m_input = reorient2std_outpath.replace('\\', '/')
     m_output = output_dir.replace('\\', '/')
     m_spm_root = spm_root.replace('\\', '/')
 
@@ -228,6 +238,8 @@ exit(0);
     for line in process.stdout:
         print(line, end='')
     process.wait()
+
+def mwc1t1_checker(output_dir):
     if os.path.exists(os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')):
         mwc1t1_file = os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')
         print(f'{mwc1t1_file} exists')
@@ -238,6 +250,20 @@ exit(0);
         data = img.get_fdata()
         voxel_volume = np.prod(img.header.get_zooms()[:3])
         print(f'Voxel volume: {voxel_volume}')
+        assert voxel_volume == 1.0
+        cmd_voxmean = f'fslstats {mwc1t1_file} -M'
+        cmd_voxstdev = f'fslstats {mwc1t1_file} -S'
+        voxmean = subprocess.run(cmd_voxmean, capture_output=True, text=True, shell = True)
+        voxstdev = subprocess.run(cmd_voxstdev, capture_output=True, text=True, shell  = True)
+        print(f'Mean of non-zero voxels for {mwc1t1_file}: {voxmean.stdout.strip()}')
+        print(f'Standard deviation of non-zero voxels for {mwc1t1_file}: {voxstdev.stdout.strip()}')
+    else:
+        print('Error - mwc1t1 file not found')
+        nb_exit(2)
+
+def dicv_file_producer(output_dir):
+    pass
+
 
 # import gzip
 # import shutil

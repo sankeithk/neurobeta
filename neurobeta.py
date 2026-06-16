@@ -17,7 +17,8 @@ if __name__ == "__main__":
     i,o = args_checker(*sys.argv)
     print(f"Input file: {i}")
     print(f"Output directory: {o}")
-    run_dartel(i, o)
+    #run_dartel(i, o)
+    mwc1t1_checker(o)
 
 
 
