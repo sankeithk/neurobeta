@@ -653,8 +653,8 @@ def machine_learner(coeff_df, output_dir, input_file):
     plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_decision.png', dpi = 600)
     plt.close()
 
-def report_gen(output_dir,  linreg_results = 'foo'):
-    html = f"<html><head><title>Neurobeta report = {nb_getbasename(output_dir)}</title></head><body>"
+def report_gen(infile, output_dir,  linreg_results = 'foo'):
+    html = f"<html><head><title>Neurobeta report = {nb_getbasename(infile)}</title></head><body>"
     html += "<br>"
     html += f"<h1>GM atrophy data visualisation</h1>"
     html += "<br>"
@@ -665,6 +665,12 @@ def report_gen(output_dir,  linreg_results = 'foo'):
     html += "<br>"
     html += f'<img src="plots/cross_sectional_statmap.png" width="800">'
     html += "<br>"
+    html += f"<h1>Linear spatial regression stats and plots</h1>"
+    html += "<h2>Stats</h2>"
+    html += f"<p>R squared = {linreg_results.linreg_r_squared}</p>"
+    html += f"<p>Adjusted R squared = {linreg_results.linreg_adj_r_squared}</p>"
+    html += f"<p>p-value = {linreg_results.linreg_pval}</p>"
+
 
     output_html = f'{output_dir}/{nb_getbasename(output_dir)}_report.html'
     with open(output_html, 'w') as f:
