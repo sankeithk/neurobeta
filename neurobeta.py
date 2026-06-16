@@ -1,24 +1,27 @@
 from nb_functions import *
 
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import sklearn
-import nilearn
-import click
 import sys
 import os
-import click
-import nipype
-from nipype.interfaces import fsl
 
 if __name__ == "__main__":
     i,o = args_checker(*sys.argv)
     print(f"Input file: {i}")
     print(f"Output directory: {o}")
-    #run_dartel(i, o)
-    mwc1t1_checker(o)
+    os.chdir(o)
+    print(f'Changed working directory to {o}')
+    if os.path.exists('mwc1t1_zscore_flirted.nii.gz') == False:
+        flirted_file = run_dartel(i, o)
+    else:
+        flirted_file = 'mwc1t1_zscore_flirted.nii.gz'
+    mwc1t1_checker(flirted_file)
+    dicv_outfile = dicv_file_producer(o)
+    roi_stdout = roi_xtractor(dicv_outfile)
+    print(roi_stdout)
+    gm_visualiser(output_dir = o, cleaned_rois = roi_stdout)
+    linreg_results, coeff_df = linear_spatial_regression(input_file = i, cleaned_rois = roi_stdout, output_dir = o)
+    machine_learner(coeff_df, input_file = i, output_dir = o)
 
 
 

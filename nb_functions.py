@@ -7,11 +7,7 @@ import nilearn
 import click
 import os
 import sys
-import nipype
 import subprocess
-import deepmriprep 
-from deepmriprep import run_preprocess
-
 # General purpose functions
 
 def nb_exit(code):
@@ -276,11 +272,15 @@ def mwc1t1_checker(flirted_file):
 
 def dicv_file_producer(output_dir):
     os.chdir(output_dir)
-    print(f'ICV normalisation starting. Changed working directory to {output_dir}')
-    if os.path.exists("mwc1t1_zscore_flirted.nii.gz"):
-        if os.path.exists('dicv_file_producer.sh'):
-            cmd_dicv = f"bash dicv_file_producer.sh {output_dir}"
-            dict_result = subprocess.run(cmd_dicv, shell = True)
+    if os.path.exists(os.path.join(output_dir, "mwc1t1_zscore_flirted.nii.gz")) == False:
+        nb_exit(3)
+    else:
+        print(f'ICV normalisation starting. Changed working directory to {output_dir}')
+        if os.path.exists(os.path.join('/mnt/c/Users/User/Downloads/neurobeta', 'dicv_file_producer.sh')):
+            cmd_dicv = f"chmod +x /mnt/c/Users/User/Downloads/neurobeta/dicv_file_producer.sh"
+            subprocess.run(cmd_dicv, shell = True)
+            cmd_dicv = f"bash /mnt/c/Users/User/Downloads/neurobeta/dicv_file_producer.sh {output_dir}"
+            subprocess.run(cmd_dicv, shell = True)
             if os.path.exists('icv.txt'):
                 with open('icv.txt') as f:
                     icv = f.readline()
@@ -295,106 +295,346 @@ def dicv_file_producer(output_dir):
                         print('Error - File not found')
                         nb_exit(2)
 
-def roi_xtractor(dicv_outfile):
-    pass
+def roi_xtractor(dicv_outfile,
+                 hc_mean = '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/scott_10k_cn_tmean.nii.gz',
+                 hc_std = '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/scott_10k_cn_tstd.nii.gz',
+                 mni152_brainmask_reference= "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain_mask.nii.gz",
+                 atlas_path = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz"):
+    if os.path.exists(dicv_outfile):
+        zscore_dicv_outfile = 'mwc1t1_zscore_flirted_dicv_atrophymap.nii.gz'
+        print('Z-scoring against healthy controls...')
+        zscore_cmd = f"fslmaths {dicv_outfile} -sub {hc_mean} -div {hc_std} -mas {mni152_brainmask_reference} {zscore_dicv_outfile}"
+        subprocess.run(zscore_cmd, shell=True)
+        if os.path.exists(zscore_dicv_outfile):
+            print(f'Successful z-scoring againse standard GM maps. Moving to parcellation with atlas at {atlas_path}...')
+            roi_output = 'rois.txt'
+            parcellate_cmd = f"fslmeants -i {zscore_dicv_outfile} --label={atlas_path} -o {roi_output}"
+            subprocess.run(parcellate_cmd, shell = True)
+            import pandas as pd
+            df = pd.read_csv('rois.txt', sep='\s+', header=None)
+            all_rois = df.values.tolist()[0]
+            print(all_rois)
+            cleaned_rois = []
+            for i in all_rois:
+                if i !=float(0):
+                    cleaned_rois.append(i)
+            assert len(cleaned_rois) == 86
+            import pickle
+            pickle.dump(cleaned_rois, open('cleaned_rois.pkl', 'wb'))
+            return cleaned_rois
 
-
-
-## FSL preprocessing steps
-
-def brain_extractor(input_file, output_dir, nb_basename):
-    os.chdir(output_dir) # Change working directory to output directory to save outputs there
-    print(f'Changed working directory to {output_dir}')
-    print(f"Step 1: Extracting brain from input file {input_file}...")
-    # Here you would add the code to perform brain extraction using FSL's BET or another tool
-    # For example, using nipype to interface with FSL:
-    from nipype.interfaces import fsl
-    bet_file = f'{output_dir}/step1_{nb_basename}_brain_extracted.nii.gz'
-    bet = fsl.BET(in_file=input_file, out_file=bet_file, mask=False, frac = 0.35)
-    bet.run()
-    if not os.path.exists(bet_file):
-        print(f"Brain extraction failed. Output file not found: {bet_file}")
-        nb_exit(1)
-    else:
-        print(f"Brain extraction successful. Output file: {bet_file}")
-        return bet_file
-
-def segmenter(bet_file, nb_basename):
-    if os.path.exists(bet_file) == False:
-        print(f"Segmentation failed. Brain extracted file not found: {bet_file}")
-        nb_exit(1)
-    else:
-        print(f"Step 2: Segmenting brain extracted file {bet_file} into GM, WM and CSF...")
-        import subprocess
-        output_basename = f"step2_{nb_basename}_segmented"        
-        cmd_fast = f"fast -n 3 -v -o {output_basename} {bet_file}"
-        subprocess.run(cmd_fast, shell=True)
-        if not os.path.exists(f'{output_basename}_pve_1.nii.gz'):
-            print(f"Segmentation failed. Output file not found: {output_basename}_pve_1.nii.gz")
-            nb_exit(1)
-        else:
-            print(f"Segmentation successful. Output files: {output_basename}_pve_0.nii.gz (CSF), {output_basename}_pve_1.nii.gz (GM), {output_basename}_pve_2.nii.gz (WM)")
-            return f'{output_basename}_pve_1.nii.gz' # Return GM partial volume estimate file
-
-
-def coregister(infile, bet_file, nb_basename, dof = 6):
-    # bet_file is to get an ICV
-    if os.path.exists(infile) == False:
-        print(f"Coregistration failed. Input file not found: {infile}")
-        nb_exit(1)
-    else:
-        print(f"Step 3: Coregistering file {infile} to MNI 1mm3 space...")
-        """
-        FLIRT to MNI152
-        """
-        mni152_brain_reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz'
-        flirted_file=f"step3_{nb_basename}_coregistered.nii.gz" 
-        cmd_flirt = f"flirt -in {infile} -ref {mni152_brain_reference}  -dof {dof} -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
         
-        subprocess.run(cmd_flirt, shell=True)
-        if not os.path.exists(flirted_file):
-            print(f"Coregistration failed. Output file not found: {flirted_file}")
-            nb_exit(1)
-        else:
-            print(f"Coregistration successful. Output file: {flirted_file}")
-            print("Calculating ICV...")
-            import nibabel as nib
-            import numpy as np
-            img = nib.load(bet_file)
-            data = img.get_fdata()
-            voxel_volume = np.prod(img.header.get_zooms()[:3])
-            brain_mask = data > 0
-            icv = np.sum(brain_mask) * voxel_volume
-            print(f"Estimated intracranial volume (ICV): {icv:.2f} mm3")
-            """
-            normalise GM scan
-            """
-            mni152_brainmask_reference= "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain_mask.nii.gz"
-            norm_filename = f"step4_{nb_basename}_norm.nii.gz"
-            print("Step 4: Normalising with scan mean and standard deviation...")
+def gm_visualiser(output_dir, 
+                  cleaned_rois, 
+                  atlas = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz"):
+    os.chdir(output_dir)
+    os.makedirs('plots', exist_ok = True)
+    print(f'Visualising the parcellated GM atrophy - all plots will be stored in {output_dir}/plots...')
+    import numpy as np
+    cleaned_rois_array = np.array(cleaned_rois)
+    import nilearn
+    from nilearn import image
+    gm_atlas_img = nilearn.image.load_img(atlas)
+    from nilearn import maskers, datasets, plotting
+    labels_masker = maskers.NiftiLabelsMasker(labels_img=gm_atlas_img, standardize=None)
+    labels_masker.fit()
+    stat_img = labels_masker.inverse_transform(cleaned_rois_array.reshape(1,-1))
+    img_data = stat_img.get_fdata()
+    non_zero_mask = img_data != 0
+    img_data[non_zero_mask] = img_data[non_zero_mask].reshape(-1, 1).flatten()
+    scaled_stat_img = nilearn.image.new_img_like(stat_img, img_data)
+    fsaverage = datasets.fetch_surf_fsaverage()
+    cmap = plt.get_cmap('coolwarm', 8)
+    print(f'Plotting surface view...')
+    plotting.plot_img_on_surf(
+        stat_map = scaled_stat_img,
+        mask_img=None,
+        views=['lateral', 'medial'],
+        hemispheres=['left'],
+        title=f'GM ROI: Surface view',
+        colorbar=True,
+        vmin=-1,
+        vmax=1,
+        cmap='coolwarm'
+    )
+    plt.savefig(f"{output_dir}/plots/surface_view_plots.png", dpi=600)
+    print(f'Plotting cross-sectional stat map...')
+    plotting.plot_stat_map(
+    stat_img,
+    display_mode='z',
+    vmin=-1,
+    vmax=1,
+    cut_coords=[0],
+    cmap=cmap,
+    bg_img=None)
+    
+    plt.savefig(f"{output_dir}/plots/cross_sectional_statmap.png", dpi=600)
 
- 
-            cmd_mean = f"fslstats {flirted_file} -k {mni152_brainmask_reference} -m"
-            res_mean = subprocess.run(cmd_mean, text = True, shell = True, capture_output = True)
-            cmd_std = f"fslstats {flirted_file} -k {mni152_brainmask_reference} -s"
-            res_std = subprocess.run(cmd_std, text = True, shell = True, capture_output = True)
-            print(f"Mean for z-scoring: {res_mean.stdout}. Standard deviation for z-scoring: {res_std.stdout}")
-            norm_cmd = f"fslmaths {flirted_file} -sub {res_mean.stdout.strip()} -div {res_std.stdout.strip()} -mas {mni152_brainmask_reference} {norm_filename}"
-            subprocess.run(norm_cmd, shell = True)
-            if os.path.exists(norm_filename) == False:
-                print(f"Coregistration failed. Output file not found: {norm_filename}")
-                nb_exit(1)
-            else:
-                print("Step 5: Normalising with ICV this time...")
-                dicv_outfile = f"step5_{nb_basename}_dicv.nii.gz"
-                dicv_cmd = f"fslmaths {norm_filename} -div {icv} {dicv_outfile}"
-                subprocess.run(dicv_cmd, shell = True)
-                if os.path.exists(dicv_outfile) == False:
-                    print(f"Coregistration failed. Output file not found: {dicv_outfile}")
-                    nb_exit(1)
-                else:
-                    print(f"Success: {dicv_outfile} located and ready for ROI analysis")
-                    return dicv_outfile
+import pandas as pd
+import numpy as np
+import sklearn
+from sklearn.linear_model import LinearRegression
+import os, pickle,tqdm, neuromaps, netneurotools, nilearn, scipy
+from nilearn import datasets, plotting, maskers
+from scipy import ndimage, spatial
+import nibabel as nib
+from tqdm import tqdm
+from neuromaps.nulls import moran
+from netneurotools import utils
+import sys
 
+def get_r_sq(X,y,model):
+    model.fit(X, y)
+    yhat = model.predict(X)
+    SS_Residual = sum((y - yhat) ** 2)
+    SS_Total = sum((y - np.mean(y)) ** 2)
+    r_squared = 1 - (SS_Residual / SS_Total)
+    return r_squared
+    
+def get_adj_r_sq(X, y, model):
+    """
+    NOTE FROM SANKEITH: THIS IS NOT MINE.
+    I TOOK THIS CODE FROM JUSTINE HANSEN THANK YOU JUSTINE HANSEN
+    """
+    r_squared = get_r_sq(X, y, model)
+    adjusted_r_squared = 1 - (1 - r_squared) * (len(y) - 1) / (len(y) - X.shape[1] - 1)
+    return adjusted_r_squared
+
+def get_centroids(img, labels=None, image_space=False):
+    """
+    NOTE FROM SANKEITH: THIS IS NOT MINE I ADAPTED THIS CODE FROM AN OLD VERSION OF NETNEUROTOOLS
+    
+    Find centroids of `labels` in `img`.
+
+    Parameters
+    ----------
+    img : niimg-like object
+        3D image containing integer label at each point
+    labels : array_like, optional
+        List of labels for which to find centroids. If not specified all
+        labels present in `img` will be used. Zero will be ignored as it is
+        considered "background." Default: None
+    image_space : bool, optional
+        Whether to return xyz (image space) coordinates for centroids based
+        on transformation in `img.affine`. Default: False
+
+    Returns
+    -------
+    centroids : (N, 3) np.ndarray
+        Coordinates of centroids for ROIs in input data
+    """ 
+    from nilearn.image import load_img, check_niimg_3d
+
+    img = check_niimg_3d(img)
+    data = nilearn.image.get_data(img)
+    if labels is None:
+        labels = np.trim_zeros(np.unique(data))
+    centroids = np.vstack(ndimage.center_of_mass(data, labels=data,
+                                                    index=labels))
+    if image_space:
+        centroids = nib.affines.apply_affine(img.affine, centroids)
+    return centroids
+
+def get_distmat(atlas):
+    """
+    Generate distance matrix for the ROIs. 
+    The distance matrix essentially indicates relative distances of ROIs to each other.
+    The distance matrix is n x n big (n = number of ROIs in an atlas)
+    """
+    atlas_path = atlas
+    gm_coords = get_centroids(atlas_path)
+    distmat = scipy.spatial.distance_matrix(gm_coords, gm_coords)
+    return distmat
+
+def get_regr_p_val_moran(X, y, atlas, distmat, output_dir, parcellation = None, n_perm = 10000):
+    
+    ## Get the original r squared
+    emp_r_squared = get_r_sq(X, y, LinearRegression(fit_intercept = False))
+
+    ## Selects atlas
+    atlas_path = atlas
+    if os.path.exists(atlas_path):
+        
+        #Generate distance matrix for the ROIs. 
+        #The distance matrix essentially indicates relative distances of ROIs to each other.
+        #The distance matrix is n x n big (n = number of ROIs in an atlas)
+        # gm_coords = get_centroids(atlas_path)
+        # distmat = scipy.spatial.distance_matrix(gm_coords, gm_coords)
+        
+        #Nulls of y are generated here
+        gm_atlas_img = nilearn.image.load_img(atlas_path)
+        labels_masker = maskers.NiftiLabelsMasker(labels_img=gm_atlas_img, standardize=None)
+        labels_masker.fit()
+        stat_img = labels_masker.inverse_transform(y.reshape(1,-1))
+        stat_img.to_filename(f'{output_dir}/for_nulls.nii.gz')
+        
+        null_y_maps = neuromaps.nulls.moran(data= y.tolist(),
+                                            distmat = distmat, # The docs say 'Providing this will cause atlas, density, and parcellation to be ignored.', but for some reason this scipt works with all of them combined idk why exactly
+                                            n_perm = n_perm,
+                                            atlas='mni152', 
+                                            density='1mm', 
+                                            parcellation = atlas_path,
+                                            seed = 42)
+        
+        null_y_maps_transposed = np.transpose(null_y_maps)
+        null_vals = [get_r_sq(X, null_y.reshape(-1, 1), LinearRegression(fit_intercept=False)) for null_y in null_y_maps_transposed]
+    
+        pval = (1 + np.sum(null_vals > emp_r_squared)) / (len(null_vals) + 1)
+        return pval, emp_r_squared
+
+    else:
+        raise FileNotFoundError
+
+def linear_spatial_regression(input_file, cleaned_rois, output_dir):
+    """
+    This function aims to:
+
+    * Conduct a linear regression between a scan's ROI values and corresponding ones from selected neurotransmitter maps
+    * Find the scan's r squared, adjusted r squared and p value
+    * Spit out the coefficients into one dataframe and the other stats into another
+    """
+    #Initial config
+
+    nb_basename = nb_getbasename(input_file)
+    neuromaps_df = pd.read_csv('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_neuromaps_rois.csv', low_memory = False)
+    neuromaps_names = neuromaps_df.columns.tolist()
+    neuromaps_df_means = neuromaps_df.mean()
+    demeaned_neuromaps_df = neuromaps_df - neuromaps_df_means
+    X = demeaned_neuromaps_df.to_numpy()
+    print(f"Starting linear spatial regression process...")
+
+    distmat = get_distmat("/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz")
+    print(f"Distance matrix calculated of size {distmat.shape}")
+
+    y = np.array(cleaned_rois).reshape(-1,1)
+
+    model = LinearRegression(fit_intercept=False)
+    model.fit(X,y)
+    r_squared = get_r_sq(X, y, model)
+    adj_r_squared = get_adj_r_sq(X, y, model)
+
+    pval,_ = get_regr_p_val_moran(X,y, output_dir = output_dir, atlas = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz", distmat = distmat)
+        
+    beta_coeffs = model.coef_.tolist()
+        
+    coeff_row = {
+        "DATA_KEY" : [nb_basename],
+        f"D1" : [float(beta_coeffs[0][0])],
+        f"D2" : [float(beta_coeffs[0][1])],
+        f"DAT" : [float(beta_coeffs[0][2])],
+        f"NET" : [float(beta_coeffs[0][3])],
+        f"5HT1A" : [float(beta_coeffs[0][4])],
+        f"5HT1B" : [float(beta_coeffs[0][5])],
+        f"5HT2A" : [float(beta_coeffs[0][6])],
+        f"5HT4" : [float(beta_coeffs[0][7])],
+        f"5HT6" : [float(beta_coeffs[0][8])],
+        f"5HTT" : [float(beta_coeffs[0][9])],
+        f"a4b2" : [float(beta_coeffs[0][10])],
+        f"M1" : [float(beta_coeffs[0][11])],
+        f"vAChT" : [float(beta_coeffs[0][12])],
+        f"NMDA" : [float(beta_coeffs[0][13])],
+        f"mGluR5" : [float(beta_coeffs[0][14])],
+        f"GABAA/BZ" : [float(beta_coeffs[0][15])],
+        f"H3" : [float(beta_coeffs[0][16])],
+        f"CB1" : [float(beta_coeffs[0][17])],
+        f"MOR" : [float(beta_coeffs[0][18])]
+    }
+        
+    coeff_df = pd.DataFrame(coeff_row)
+
+    stats_row = {
+        "DATA_KEY" : [nb_basename],
+        f"R-Squared" : [float(r_squared[0])],
+        f"Adjusted R-Squared" : [float(adj_r_squared[0])],
+        f"p-value" : [float(pval)]
+    }
+
+    stats_df = pd.DataFrame(stats_row)
+
+    print('Linear regression complete. Coefficinets and regression statistics are being saved...')
+
+    os.makedirs('linreg_stats', exist_ok = True)
+
+    coeff_df_path = os.path.join('linreg_stats', f"{nb_basename}_coeffs.csv")
+    print(f"\nSaving coefficients to {coeff_df_path}")
+    coeff_df.to_csv(coeff_df_path, index = False)
+
+    stats_df_path = os.path.join('linreg_stats', f"{nb_basename}_stats.csv")
+    print(f"\nSaving linear regression stats to {stats_df_path}")
+    stats_df.to_csv(stats_df_path, index = False)
+
+    class ResultsClass:
+        def __init__(self, linreg_r_squared, linreg_adj_r_squared, linreg_pval):
+            self.linreg_r_squared = linreg_r_squared
+            self.linreg_adj_r_squared = linreg_adj_r_squared
+            self.linreg_pval = linreg_pval
+
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib import font_manager
+    cmap = np.genfromtxt('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/colourmap.csv', delimiter=',')
+    cmap_div = ListedColormap(cmap)
+    plt.figure(figsize = (20,12))
+    coeff_df_to_plot = coeff_df.drop(columns = 'DATA_KEY')
+    sns.heatmap(coeff_df_to_plot,
+                xticklabels = coeff_df_to_plot.columns.tolist(),
+                vmin = -0.5,
+                vmax = 0.5,
+                cmap = cmap_div,
+                annot = False)
+    os.makedirs('plots', exist_ok = True)
+    heatmap_path = os.path.join('plots', f'{nb_basename}_heatmap.png')
+    plt.savefig(heatmap_path, dpi = 600)
+    print(f'Heatmap of beta coefficient values saved to {heatmap_path}')
+    linreg_results = ResultsClass(float(r_squared[0]), float(adj_r_squared[0]), float(pval))
+    return linreg_results, coeff_df
+
+def machine_learner(coeff_df, output_dir, input_file):
+    import sklearn
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.linear_model import LogisticRegression
+    import xgboost
+    from xgboost import XGBClassifier
+    import shap
+    from shap import KernelExplainer
+    seed = 42
+    train_df = pd.read_csv('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/nb_train.csv', low_memory = False)
+    y = train_df.copy()['DIAGNOSIS']
+    X_raw = train_df.copy().drop(columns = 'DIAGNOSIS')
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_raw)
+    xgb_balancer = float(y[y == 0].shape[0])/ float(y[y == 1].shape[0])
+    print(xgb_balancer)
+
+    ## Instantiate xgb with the balancer - mitigates class imbalance
+    
+    xgb = XGBClassifier(random_state = seed, scale_pos_weight = xgb_balancer)
+    lr = LogisticRegression(random_state = seed, class_weight = 'balanced')
+
+    xgb.fit(X_scaled, y)
+    lr.fit(X_scaled, y)
+
+    X_test_raw = coeff_df.drop(columns = 'DATA_KEY')
+    X_test = scaler.transform(X_test_raw)
+    y_pred = xgb.predict(X_test)
+    y_predict_proba = xgb.predict_proba(X_test)
+
+    diag_dict = {0 : 'Cognitively Normal', 1 : 'Alzheimer\'s Disease'}
+    print(f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%')
+
+    y_pred_lr = lr.predict(X_test)
+    y_predict_proba_lr = lr.predict_proba(X_test)
+
+    pred = int(y_pred_lr[0])
+    proba = float(y_predict_proba_lr[0, pred]) * 100
+
+    print(f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Probability of prediction certainty = {proba:.2f}%")
+    explainer = shap.TreeExplainer(xgb, X_test)
+    shap_values = explainer(X_test)
+    shap_values.feature_names = X_test_raw.columns.tolist()
+
+    shap.plots.waterfall(shap_values[0], max_display = 19, show = False)
+    plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_waterfall.png', dpi = 600)
+    plt.close()
 
 

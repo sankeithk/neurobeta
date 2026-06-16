@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env
 
 OUTPUT_DIR=$1
 
