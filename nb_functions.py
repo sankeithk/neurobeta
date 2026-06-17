@@ -610,7 +610,6 @@ def machine_learner(coeff_df, output_dir, input_file):
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_raw)
     xgb_balancer = float(y[y == 0].shape[0])/ float(y[y == 1].shape[0])
-    print(xgb_balancer)
 
     ## Instantiate xgb with the balancer - mitigates class imbalance
     
@@ -624,10 +623,10 @@ def machine_learner(coeff_df, output_dir, input_file):
     X_test = scaler.transform(X_test_raw)
     y_pred = xgb.predict(X_test)
     y_predict_proba = xgb.predict_proba(X_test)
-    from sklearn.metrics import brier_score_loss
 
     diag_dict = {0 : 'Cognitively Normal', 1 : 'Alzheimer\'s Disease'}
-    print(f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.')
+    results_xgb = f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.'
+    print(results_xgb)
 
     y_pred_lr = lr.predict(X_test)
     y_predict_proba_lr = lr.predict_proba(X_test)
@@ -635,7 +634,9 @@ def machine_learner(coeff_df, output_dir, input_file):
     pred = int(y_pred_lr[0])
     proba = float(y_predict_proba_lr[0, pred]) * 100
 
-    print(f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Probability of prediction certainty = {proba:.2f}%")
+    results_lr = f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Probability of prediction certainty = {proba:.2f}%"
+    print(results_lr)
+
     explainer = shap.TreeExplainer(xgb, X_test)
     shap_values = explainer(X_test)
     shap_values.feature_names = X_test_raw.columns.tolist()
@@ -652,9 +653,17 @@ def machine_learner(coeff_df, output_dir, input_file):
     os.chdir(output_dir)
     plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_decision.png', dpi = 600)
     plt.close()
+    class MLResults:
+        def __init__(self, xgb_res, lr_res):
+            self.xgb_res = xgb_res
+            self.lr_res = lr_res
+    ml_results = MLResults(results_xgb, results_lr)
+    return ml_results
 
-def report_gen(infile, output_dir,  linreg_results = 'foo'):
-    html = f"<html><head><title>Neurobeta report = {nb_getbasename(infile)}</title></head><body>"
+
+def report_gen(infile, output_dir,  linreg_results, ml_results):
+    html = f"<!DOCTYPE html>"
+    html += f"<html><head><title>Neurobeta report = {nb_getbasename(infile)}</title></head><body>"
     html += "<br>"
     html += f"<h1>GM atrophy data visualisation</h1>"
     html += "<br>"
@@ -667,16 +676,32 @@ def report_gen(infile, output_dir,  linreg_results = 'foo'):
     html += "<br>"
     html += f"<h1>Linear spatial regression stats and plots</h1>"
     html += "<h2>Stats</h2>"
-    html += f"<p>R squared = {linreg_results.linreg_r_squared}</p>"
-    html += f"<p>Adjusted R squared = {linreg_results.linreg_adj_r_squared}</p>"
-    html += f"<p>p-value = {linreg_results.linreg_pval}</p>"
-
+    html += "<br>"
+    html += "table {font-family: arial, sans-serif; border-collapse: collapse; width: 100%;}"
+    html += "td, th {border: 1px solid #dddddd; text-align: left; padding: 8px;}"
+    html += "table {font-family: arial, sans-serif; border-collapse: collapse; width: 100%;}"
+    html += f"<table><tr><th>Regression statistic</th><th>Value (to 2 decimal places)</th></tr>"
+    html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_r_squared, 2)}</td></tr>"
+    html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_adj_r_squared, 2)}</td></tr>"
+    html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_pval, 2)}</td></tr></table>"
+    html += "<br>"
+    html += "<h2>Beta coefficient visualisation (heatmap)</h2>"
+    html += f'<img src="plots/{nb_getbasename(infile)}_heatmap.png" width="800">'
+    html += '<br>'
+    html += "<h1>Machine learning overview</h1>"
+    html += "<br>"
+    html += f"<body>{ml_results.xgb_res}</body>"
+    html += f"<body>{ml_results.lr_res}</body>"
+    html += "<br>"
+    html += "<h2>SHAP analysis output</h2>"
+    html += f'<img src="plots/{nb_getbasename(infile)}_shap_decision.png" width="800">'
+    html += "</html>"
 
     output_html = f'{output_dir}/{nb_getbasename(output_dir)}_report.html'
     with open(output_html, 'w') as f:
         f.write(html)
 
-    print(f"Report saved to {output_html}")
+    print(f"Report saved to {output_html}. This concludes the current run of neurobeta.")
     nb_exit(0)
 
 

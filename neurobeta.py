@@ -21,8 +21,8 @@ if __name__ == "__main__":
     print(roi_stdout)
     gm_visualiser(output_dir = o, cleaned_rois = roi_stdout)
     linreg_results, coeff_df = linear_spatial_regression(input_file = i, cleaned_rois = roi_stdout, output_dir = o)
-    machine_learner(coeff_df, input_file = i, output_dir = o)
-    report_gen(infile = i, output_dir = o, linreg_results = linreg_results)
+    ml_results = machine_learner(coeff_df, input_file = i, output_dir = o)
+    report_gen(infile = i, output_dir = o, linreg_results = linreg_results, ml_results = ml_results)
 
 
 
