@@ -8,6 +8,11 @@ import click
 import os
 import sys
 import subprocess
+
+# Set environment variable
+NB_ROOT = os.path.dirname(os.path.abspath(__file__))
+NB_STANDARDS = os.path.join(NB_ROOT, 'neurobeta_standards')
+
 # General purpose functions
 
 def nb_exit(code):
@@ -69,11 +74,16 @@ def run_dartel(input_file, output_dir):
     import os
     import subprocess
     # Configuration: Note from Sankeith - please change these paths for your system
-    spm_launcher = '/home/sankeith/spm_standalone/run_spm25.sh'
-    mcr_path = '/home/sankeith/MATLAB_Runtime/R2024b'
-    spm_root = '/home/sankeith/spm_standalone'
+    # spm_launcher = '/home/sankeith/spm_standalone/run_spm25.sh'
+    # mcr_path = '/home/sankeith/MATLAB_Runtime/R2024b'
+    # spm_root = '/home/sankeith/spm_standalone'
+    spm_launcher = os.environ.get('SPM_LAUNCHER', '/home/sankeith/spm_standalone/run_spm25.sh')
+    mcr_path     = os.environ.get('MCR_PATH',     '/home/sankeith/MATLAB_Runtime/R2024b')
+    spm_root     = os.environ.get('SPM_ROOT',     '/home/sankeith/spm_standalone')
+    # tpm_file is derived from spm_root, so don't hardcode it separately
+    tpm_file     = os.path.join(spm_root, 'spm25_mcr', 'spm25', 'tpm', 'TPM.nii')
     # For the TPM file path, you need to change it within matlab_template. I've made a 'dud' tpm_file variable here for readability
-    tpm_file = '/home/sankeith/spm_standalone/spm25_mcr/spm25/tpm/TPM.nii'
+    #tpm_file = '/home/sankeith/spm_standalone/spm25_mcr/spm25/tpm/TPM.nii'
 
     # Use fslreorient2std to make sure input image is in correct orientation
     import subprocess
@@ -220,8 +230,9 @@ exit(0);
 """
 
     full_code = matlab_template.replace('VAR_INPUT', m_input)\
-                               .replace('VAR_OUTPUT', m_output)\
-                               .replace('VAR_SPMROOT', m_spm_root)
+                                .replace('VAR_OUTPUT', m_output)\
+                                .replace('VAR_SPMROOT', m_spm_root)\
+                                .replace('VAR_TPMFILE', tpm_file) 
 
     runner_path = os.path.join(output_dir, 'pipeline_runner.m')
     with open(runner_path, 'w') as f:
@@ -236,7 +247,7 @@ exit(0);
     process.wait()
     if os.path.exists(os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')):
         mwc1t1_file = os.path.join(output_dir, 'mwc1t1_zscore.nii.gz')
-        mni152_brain_reference= '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain.nii.gz'
+        mni152_brain_reference= os.path.join(NB_STANDARDS, 'MNI152_T1_1mm_brain.nii.gz')
         flirted_file=os.path.join(output_dir, "mwc1t1_zscore_flirted.nii.gz")
         cmd_flirt = f"flirt -v -in {mwc1t1_file} -ref {mni152_brain_reference}  -dof 12 -applyisoxfm 1.0 -interp nearestneighbour -out {flirted_file}"
         subprocess.run(cmd_flirt, shell=True)
@@ -276,11 +287,10 @@ def dicv_file_producer(output_dir):
         nb_exit(3)
     else:
         print(f'ICV normalisation starting. Changed working directory to {output_dir}')
-        if os.path.exists(os.path.join('/mnt/c/Users/User/Downloads/neurobeta', 'dicv_file_producer.sh')):
-            cmd_dicv = f"chmod +x /mnt/c/Users/User/Downloads/neurobeta/dicv_file_producer.sh"
-            subprocess.run(cmd_dicv, shell = True)
-            cmd_dicv = f"bash /mnt/c/Users/User/Downloads/neurobeta/dicv_file_producer.sh {output_dir}"
-            subprocess.run(cmd_dicv, shell = True)
+        dicv_script = os.path.join(NB_ROOT, 'dicv_file_producer.sh')
+        if os.path.exists(dicv_script):
+            subprocess.run(f"chmod +x {dicv_script}", shell=True)
+            subprocess.run(f"bash {dicv_script} {output_dir}", shell=True)
             if os.path.exists('icv.txt'):
                 with open('icv.txt') as f:
                     icv = f.readline()
@@ -296,10 +306,10 @@ def dicv_file_producer(output_dir):
                         nb_exit(2)
 
 def roi_xtractor(dicv_outfile,
-                 hc_mean = '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/scott_10k_cn_tmean.nii.gz',
-                 hc_std = '/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/scott_10k_cn_tstd.nii.gz',
-                 mni152_brainmask_reference= "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/MNI152_T1_1mm_brain_mask.nii.gz",
-                 atlas_path = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz"):
+                 hc_mean = os.path.join(NB_STANDARDS, 'scott_10k_cn_tmean.nii.gz'),
+                 hc_std = os.path.join(NB_STANDARDS, 'scott_10k_cn_tstd.nii.gz'),
+                 mni152_brainmask_reference= os.path.join(NB_STANDARDS, 'MNI152_T1_1mm_brain_mask.nii.gz'),
+                 atlas_path = os.path.join(NB_STANDARDS, 'gm_only_MNI152_1mm_desikan+aseg.nii.gz')):
     if os.path.exists(dicv_outfile):
         zscore_dicv_outfile = 'mwc1t1_zscore_flirted_dicv_atrophymap.nii.gz'
         print('Z-scoring against healthy controls...')
@@ -326,7 +336,7 @@ def roi_xtractor(dicv_outfile,
         
 def gm_visualiser(output_dir, 
                   cleaned_rois, 
-                  atlas = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz"):
+                  atlas = os.path.join(NB_STANDARDS, "gm_only_MNI152_1mm_desikan+aseg.nii.gz")):
     os.chdir(output_dir)
     os.makedirs('plots', exist_ok = True)
     print(f'Visualising the parcellated GM atrophy - all plots will be stored in {output_dir}/plots...')
@@ -501,14 +511,13 @@ def linear_spatial_regression(input_file, cleaned_rois, output_dir):
     #Initial config
 
     nb_basename = nb_getbasename(input_file)
-    neuromaps_df = pd.read_csv('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_neuromaps_rois.csv', low_memory = False)
-    neuromaps_names = neuromaps_df.columns.tolist()
+    neuromaps_df = pd.read_csv(os.path.join(NB_STANDARDS, 'gm_neuromaps_rois.csv'), low_memory = False)
     neuromaps_df_means = neuromaps_df.mean()
     demeaned_neuromaps_df = neuromaps_df - neuromaps_df_means
     X = demeaned_neuromaps_df.to_numpy()
     print(f"Starting linear spatial regression process...")
 
-    distmat = get_distmat("/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz")
+    distmat = get_distmat(os.path.join(NB_STANDARDS,"gm_only_MNI152_1mm_desikan+aseg.nii.gz"))
     print(f"Distance matrix calculated of size {distmat.shape}")
 
     y = np.array(cleaned_rois).reshape(-1,1)
@@ -518,7 +527,7 @@ def linear_spatial_regression(input_file, cleaned_rois, output_dir):
     r_squared = get_r_sq(X, y, model)
     adj_r_squared = get_adj_r_sq(X, y, model)
 
-    pval,_ = get_regr_p_val_moran(X,y, output_dir = output_dir, atlas = "/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/gm_only_MNI152_1mm_desikan+aseg.nii.gz", distmat = distmat)
+    pval, _ = get_regr_p_val_moran(X,y, output_dir = output_dir, atlas = os.path.join(NB_STANDARDS, "gm_only_MNI152_1mm_desikan+aseg.nii.gz"), distmat = distmat)
         
     beta_coeffs = model.coef_.tolist()
         
@@ -576,8 +585,7 @@ def linear_spatial_regression(input_file, cleaned_rois, output_dir):
 
     import matplotlib.pyplot as plt
     from matplotlib.colors import ListedColormap
-    from matplotlib import font_manager
-    cmap = np.genfromtxt('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/colourmap.csv', delimiter=',')
+    cmap = np.genfromtxt(os.path.join(NB_STANDARDS, 'colourmap.csv'), delimiter=',')
     cmap_div = ListedColormap(cmap)
     plt.figure(figsize = (20,12))
     coeff_df_to_plot = coeff_df.drop(columns = 'DATA_KEY')
@@ -604,7 +612,7 @@ def machine_learner(coeff_df, output_dir, input_file):
     import shap
     from shap import KernelExplainer
     seed = 42
-    train_df = pd.read_csv('/mnt/c/Users/User/Downloads/neurobeta/neurobeta_standards/nb_train.csv', low_memory = False)
+    train_df = pd.read_csv(os.path.join(NB_STANDARDS, 'nb_train.csv'), low_memory = False)
     y = train_df.copy()['DIAGNOSIS']
     X_raw = train_df.copy().drop(columns = 'DIAGNOSIS')
     scaler = StandardScaler()
@@ -625,7 +633,7 @@ def machine_learner(coeff_df, output_dir, input_file):
     y_predict_proba = xgb.predict_proba(X_test)
 
     diag_dict = {0 : 'Cognitively Normal', 1 : 'Alzheimer\'s Disease'}
-    results_xgb = f'Results from XGB classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.'
+    results_xgb = f'Results from XGBoost classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.'
     print(results_xgb)
 
     y_pred_lr = lr.predict(X_test)
@@ -637,21 +645,17 @@ def machine_learner(coeff_df, output_dir, input_file):
     results_lr = f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Probability of prediction certainty = {proba:.2f}%"
     print(results_lr)
 
-    explainer = shap.TreeExplainer(xgb, X_test)
-    shap_values = explainer(X_test)
-    shap_values.feature_names = X_test_raw.columns.tolist()
-    explainer = shap.TreeExplainer(xgb, X_test)
+    explainer = shap.TreeExplainer(xgb)
     shap_values = explainer(X_test)
     shap_values.feature_names = X_test_raw.columns.tolist()
     plt.figure(figsize = (15, 10))
-    shap.decision_plot(
-        base_value = explainer.expected_value,
-        shap_values = shap_values.values[0],
-        features = X_test,
-        feature_names = X_test_raw.columns.tolist(),
-        show = False)
+    plt.figure(figsize= (15, 10))
+    shap.plots.waterfall(
+    shap_values[0],
+    max_display=len(X_test_raw.columns),
+    show = False)
     os.chdir(output_dir)
-    plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_decision.png', dpi = 600)
+    plt.savefig(f'plots/{nb_getbasename(input_file)}_shap_waterfall.png', dpi = 600)
     plt.close()
     class MLResults:
         def __init__(self, xgb_res, lr_res):
@@ -694,8 +698,8 @@ def report_gen(infile, output_dir,  linreg_results, ml_results):
     html += f"<p>{ml_results.xgb_res}</p>"
     html += f"<p>{ml_results.lr_res}</p>"
     html += "<br>"
-    html += "<h2>SHAP analysis output</h2>"
-    html += f'<img src="plots/{nb_getbasename(infile)}_shap_decision.png" width="800">'
+    html += "<h2>SHAP analysis output (XGBoost only)</h2>"
+    html += f'<img src="plots/{nb_getbasename(infile)}_shap_waterfall.png"; width="800">'
     html += "</html>"
 
     output_html = f'{output_dir}/{nb_getbasename(output_dir)}_report.html'

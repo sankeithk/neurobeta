@@ -11,10 +11,7 @@ if __name__ == "__main__":
     print(f"Output directory: {o}")
     os.chdir(o)
     print(f'Changed working directory to {o}')
-    if os.path.exists('mwc1t1_zscore_flirted.nii.gz') == False:
-        flirted_file = run_dartel(i, o)
-    else:
-        flirted_file = 'mwc1t1_zscore_flirted.nii.gz'
+    flirted_file = run_dartel(i, o)
     mwc1t1_checker(flirted_file)
     dicv_outfile = dicv_file_producer(o)
     roi_stdout = roi_xtractor(dicv_outfile)
