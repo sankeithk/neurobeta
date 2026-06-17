@@ -677,9 +677,10 @@ def report_gen(infile, output_dir,  linreg_results, ml_results):
     html += f"<h1>Linear spatial regression stats and plots</h1>"
     html += "<h2>Stats</h2>"
     html += "<br>"
+    html += "<style><head>"
     html += "table {font-family: arial, sans-serif; border-collapse: collapse; width: 100%;}"
     html += "td, th {border: 1px solid #dddddd; text-align: left; padding: 8px;}"
-    html += "table {font-family: arial, sans-serif; border-collapse: collapse; width: 100%;}"
+    html += "tr:nth-child(even) {background-color: #dddddd;}</style></head>"
     html += f"<table><tr><th>Regression statistic</th><th>Value (to 2 decimal places)</th></tr>"
     html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_r_squared, 2)}</td></tr>"
     html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_adj_r_squared, 2)}</td></tr>"
@@ -690,8 +691,8 @@ def report_gen(infile, output_dir,  linreg_results, ml_results):
     html += '<br>'
     html += "<h1>Machine learning overview</h1>"
     html += "<br>"
-    html += f"<body>{ml_results.xgb_res}</body>"
-    html += f"<body>{ml_results.lr_res}</body>"
+    html += f"<p>{ml_results.xgb_res}</p>"
+    html += f"<p>{ml_results.lr_res}</p>"
     html += "<br>"
     html += "<h2>SHAP analysis output</h2>"
     html += f'<img src="plots/{nb_getbasename(infile)}_shap_decision.png" width="800">'
