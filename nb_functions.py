@@ -392,11 +392,10 @@ import pandas as pd
 import numpy as np
 import sklearn
 from sklearn.linear_model import LinearRegression
-import os, pickle,tqdm, neuromaps, netneurotools, nilearn, scipy
+import os, pickle, neuromaps, netneurotools, nilearn, scipy
 from nilearn import datasets, plotting, maskers
 from scipy import ndimage, spatial
 import nibabel as nib
-from tqdm import tqdm
 from neuromaps.nulls import moran
 from netneurotools import utils
 import sys
@@ -613,7 +612,7 @@ def machine_learner(coeff_df, output_dir, input_file):
     import xgboost
     from xgboost import XGBClassifier
     import shap
-    from shap import KernelExplainer
+    from shap import TreeExplainer
     seed = 42
     train_df = pd.read_csv(os.path.join(NB_STANDARDS, 'nb_train.csv'), low_memory = False)
     y = train_df.copy()['DIAGNOSIS']
@@ -690,8 +689,8 @@ def report_gen(infile, output_dir,  linreg_results, ml_results):
     html += "tr:nth-child(even) {background-color: #dddddd;}</style></head>"
     html += f"<table><tr><th>Regression statistic</th><th>Value (to 2 decimal places)</th></tr>"
     html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_r_squared, 2)}</td></tr>"
-    html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_adj_r_squared, 2)}</td></tr>"
-    html += f"<tr><td>R squared</td><td>{round(linreg_results.linreg_pval, 2)}</td></tr></table>"
+    html += f"<tr><td>Adjusted R squared</td><td>{round(linreg_results.linreg_adj_r_squared, 2)}</td></tr>"
+    html += f"<tr><td>p-value</td><td>{round(linreg_results.linreg_pval, 2)}</td></tr></table>"
     html += "<br>"
     html += "<h2>Beta coefficient visualisation (heatmap)</h2>"
     html += f'<img src="plots/{nb_getbasename(infile)}_heatmap.png" width="800">'
