@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import sklearn
 import nilearn
-import click
 import os
 import sys
 import subprocess
@@ -80,6 +79,10 @@ def run_dartel(input_file, output_dir):
     spm_launcher = os.environ.get('SPM_LAUNCHER', '/home/sankeith/spm_standalone/run_spm25.sh')
     mcr_path     = os.environ.get('MCR_PATH',     '/home/sankeith/MATLAB_Runtime/R2024b')
     spm_root     = os.environ.get('SPM_ROOT',     '/home/sankeith/spm_standalone')
+    print('MATLAB Runtime and SPM environment paths (printed for debugging purposes):')
+    print(f'spm_launcher = {spm_launcher}')
+    print(f'mcr_path = {mcr_path}')
+    print(f'spm_root = {spm_root}')
     # tpm_file is derived from spm_root, so don't hardcode it separately
     tpm_file     = os.path.join(spm_root, 'spm25_mcr', 'spm25', 'tpm', 'TPM.nii')
     # For the TPM file path, you need to change it within matlab_template. I've made a 'dud' tpm_file variable here for readability
