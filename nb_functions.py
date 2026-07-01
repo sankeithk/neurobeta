@@ -635,7 +635,7 @@ def machine_learner(coeff_df, output_dir, input_file):
     y_predict_proba = xgb.predict_proba(X_test)
 
     diag_dict = {0 : 'Cognitively Normal', 1 : 'Alzheimer\'s Disease'}
-    results_xgb = f'Results from XGBoost classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Probability of prediction certainty = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.'
+    results_xgb = f'Results from XGBoost classifier. Likely diagnosis of your scan = {diag_dict[y_pred[0]]}. Model confidence = {round(float(y_predict_proba[0][0]), 2) * 100 if diag_dict[y_pred[0]] == 0 else round(float(y_predict_proba[0][1]), 2) * 100}%.'
     print(results_xgb)
 
     y_pred_lr = lr.predict(X_test)
@@ -644,7 +644,7 @@ def machine_learner(coeff_df, output_dir, input_file):
     pred = int(y_pred_lr[0])
     proba = float(y_predict_proba_lr[0, pred]) * 100
 
-    results_lr = f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Probability of prediction certainty = {proba:.2f}%"
+    results_lr = f"Results from LR classifier. Likely diagnosis of your scan = {diag_dict[pred]}. Model confidence = {proba:.2f}%"
     print(results_lr)
 
     explainer = shap.TreeExplainer(xgb)
